@@ -52,6 +52,7 @@ def evaluate_on_docs(
     lda_model=None,
     bert_model=None,
     encoder=None,
+    llm_model=None,
     window: int = 3,
     penalty_lambda: float = 8.0,
     alpha: float = 1.,
@@ -89,6 +90,9 @@ def evaluate_on_docs(
         elif method == 'bert':
             assert bert_model is not None
             pred = bert_model.segment(d.sentences, k_segments=k_segments, window=window)
+        elif method == 'llm':
+            assert llm_model is not None
+            pred = llm_model.segment(d.sentences, k_segments=k_segments)
         elif method == 'bertopic':
             T = bertopic_topic_vectors(d.sentences, encoder)
             # pred = boundaries_from_topic_vectors(T, k_segments=k_segments, window=window, metric='cos')
@@ -184,7 +188,8 @@ def main():
     parser.add_argument('--lda-topics', type=int, default=50)
     parser.add_argument('--lda-passes', type=int, default=5)
     parser.add_argument('--window', type=int, default=3, help='Sliding window size (sentences)')
-    parser.add_argument('--method', type=str, default='all', choices=['all'] + ALL_METHODS)
+    parser.add_argument('--method', type=str, default='all', choices=['all'] + ALL_METHODS + ['llm'],
+                        help="'all' runs every non-LLM method; 'llm' (paid API calls) must be asked for")
     parser.add_argument('--penalty', type=float, default=8.0, help='MDL penalty (BayesSeg-MD)')
     parser.add_argument('--alpha', type=float, default=1.0, help='coherence exponent')
     parser.add_argument('--gamma', type=float, default=0.0, help='intra-window concentration exponent')
@@ -193,6 +198,19 @@ def main():
     parser.add_argument('--embed-model', type=str, default=DEFAULT_EMBED_MODEL,
                         help='HF encoder for the "bertopic" method')
     parser.add_argument('--device', type=str, default=None, help='cuda / cpu (default: auto)')
+    # LLM segmentation (segmentation/llm_segmenter.py)
+    parser.add_argument('--llm-backend', default='anthropic', choices=['anthropic', 'hf', 'mock'],
+                        help="anthropic = Claude API, hf = local open-weight chat model, mock = dry run")
+    parser.add_argument('--llm-model', default='claude-opus-5-5',
+                        help='Claude model id, or a HF model id with --llm-backend hf')
+    parser.add_argument('--llm-mode', default='k', choices=['k', 'free'],
+                        help='k = number of sections given (oracle k); free = model decides')
+    parser.add_argument('--llm-shots', type=int, default=0, help='Few-shot examples (held out from the evaluated docs)')
+    parser.add_argument('--llm-effort', default='medium', choices=['low', 'medium', 'high', 'xhigh', 'max'],
+                        help='Claude effort level')
+    parser.add_argument('--llm-no-fallback', action='store_true',
+                        help='Disable Claude server-side refusal fallback (no answers from another model)')
+    parser.add_argument('--llm-concurrency', type=int, default=8)
     # Document filters (defaults = original Indonesian setup)
     parser.add_argument('--min-headings', type=int, default=3)
     parser.add_argument('--min-boundaries', type=int, default=3)
@@ -240,6 +258,7 @@ def main():
 
     print(f'Language: {args.lang} ({lang.name}) | corpus: {directory_path} | files: {len(files_path)}')
     docs = load_docs(files_path, parse_kw)
+    all_docs = docs
     if args.max_docs and len(docs) > args.max_docs:
         docs = random.Random(args.seed).sample(docs, args.max_docs)
     if not docs:
@@ -273,14 +292,39 @@ def main():
         print(f'Loading sentence encoder {args.embed_model}...')
         encoder = SentenceEncoder(model_name=args.embed_model, device=args.device)
 
+    llm = None
+    llm_name = None
+    if 'llm' in methods:
+        from segmentation.llm_segmenter import LLMSegmenter
+        shots = []
+        if args.llm_shots:
+            in_eval = {id(d) for d in docs}
+            pool = [d for d in all_docs if id(d) not in in_eval
+                    and 20 <= len(d.sentences) <= 40 and len(d.true_boundaries) >= 3]
+            if len(pool) < args.llm_shots:
+                raise SystemExit('Not enough held-out documents for few-shot examples (use --max-docs).')
+            shots = random.Random(args.seed + 1).sample(pool, args.llm_shots)
+        llm_name = f"llm_{args.llm_model.replace('/', '_')}_{args.llm_mode}_{args.llm_shots}shot"
+        cache = os.path.join(out_root, 'llm_cache', f'{llm_name}_{args.llm_effort}.jsonl')
+        llm = LLMSegmenter(backend=args.llm_backend, model=args.llm_model, mode=args.llm_mode,
+                           language=lang.name, shots=shots, effort=args.llm_effort,
+                           fallback=not args.llm_no_fallback, cache_path=cache,
+                           concurrency=args.llm_concurrency, seed=args.seed)
+        print(f'LLM: {args.llm_backend}/{args.llm_model} mode={args.llm_mode} shots={args.llm_shots} '
+              f'effort={args.llm_effort} fallback={not args.llm_no_fallback} cache={cache}')
+        llm.prefetch(docs, desc=llm_name)
+
     def run(m: str):
         print(f'Evaluating {m}...')
-        kw = {'lda_model': lda, 'bert_model': bert, 'encoder': encoder, 'window': args.window,
+        kw = {'lda_model': lda, 'bert_model': bert, 'encoder': encoder, 'llm_model': llm, 'window': args.window,
               'penalty_lambda': args.penalty, 'alpha': args.alpha, 'gamma': args.gamma}
         t0 = time.time()
-        res, seg_res = evaluate_parallel(docs, m, args.workers, **kw)
+        res, seg_res = evaluate_parallel(docs, m, 1 if m == 'llm' else args.workers, **kw)
         res['runtime_sec'] = round(time.time() - t0, 1)
         res['workers'] = args.workers if m not in ('bert', 'bertopic') else 1
+        if m == 'llm':
+            res.update(llm.usage_report(docs))
+            m = llm_name
         if save:
             os.makedirs(os.path.join(out_root, m), exist_ok=True)
             with open(os.path.join(out_root, m, f'{tag}.pkl'), 'wb') as file:

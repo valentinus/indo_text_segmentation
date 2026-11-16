@@ -13,3 +13,5 @@ transformers
 bertopic[hdbscan]
 # corpus preparation (scripts/prepare_wiki.py)
 wikiextractor>=3.1.0
+# llm segmentation (Claude API)
+anthropic
