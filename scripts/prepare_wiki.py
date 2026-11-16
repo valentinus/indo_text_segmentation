@@ -30,23 +30,32 @@ from languages import LOCAL_LANGUAGES, get_language  # noqa: E402
 
 
 def download(url: str, dest: str) -> None:
-    import requests
-    from tqdm import tqdm
+    """Stream `url` to `dest` using only the standard library."""
+    import urllib.request
 
     if os.path.exists(dest):
         print(f'[skip] {dest} already exists')
         return
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     tmp = dest + '.part'
-    headers = {'User-Agent': 'indo-text-segmentation/1.0 (research; dump download)'}
-    with requests.get(url, stream=True, timeout=60, headers=headers) as r:
-        r.raise_for_status()
-        total = int(r.headers.get('content-length', 0))
-        with open(tmp, 'wb') as f, tqdm(total=total, unit='B', unit_scale=True,
-                                         desc=os.path.basename(dest)) as bar:
-            for chunk in r.iter_content(chunk_size=1 << 20):
-                f.write(chunk)
-                bar.update(len(chunk))
+    req = urllib.request.Request(
+        url, headers={'User-Agent': 'indo-text-segmentation/1.0 (research; dump download)'})
+    print(f'[download] {url}')
+    with urllib.request.urlopen(req, timeout=60) as r, open(tmp, 'wb') as f:
+        total = int(r.headers.get('Content-Length') or 0)
+        done = 0
+        while True:
+            chunk = r.read(1 << 20)
+            if not chunk:
+                break
+            f.write(chunk)
+            done += len(chunk)
+            if total:
+                print(f'\r  {done / 1e6:.1f} / {total / 1e6:.1f} MB ({100 * done / total:.0f}%)',
+                      end='', flush=True)
+            else:
+                print(f'\r  {done / 1e6:.1f} MB', end='', flush=True)
+        print()
     os.replace(tmp, dest)
 
 
