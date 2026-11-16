@@ -224,3 +224,8 @@ __marimo__/
 /data/wiki/**/*.bz2
 /data/wiki/**/*.part
 /data/wiki/**/.wikiextractor_patched/
+
+# LaTeX build files
+paper/*.aux
+paper/*.log
+paper/*.out
