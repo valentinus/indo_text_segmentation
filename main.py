@@ -310,7 +310,8 @@ def main():
             if len(pool) < args.llm_shots:
                 raise SystemExit('Not enough held-out documents for few-shot examples (use --max-docs).')
             shots = random.Random(args.seed + 1).sample(pool, args.llm_shots)
-        llm_name = f"llm_{args.llm_model.replace('/', '_')}_{args.llm_mode}_{args.llm_shots}shot"
+        model_label = 'mock' if args.llm_backend == 'mock' else args.llm_model.replace('/', '_')
+        llm_name = f"llm_{model_label}_{args.llm_mode}_{args.llm_shots}shot"
         variant = args.llm_effort if args.llm_backend == 'anthropic' else ('4bit' if args.llm_4bit else 'bf16')
         cache = os.path.join(out_root, 'llm_cache', f'{llm_name}_{variant}.jsonl')
         llm = LLMSegmenter(backend=args.llm_backend, model=args.llm_model, mode=args.llm_mode,
