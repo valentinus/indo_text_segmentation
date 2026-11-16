@@ -5,6 +5,7 @@ import os
 import argparse
 import json
 import random
+import time
 from functools import partial
 from typing import List, Optional, Dict
 
@@ -54,7 +55,8 @@ def evaluate_on_docs(
     window: int = 3,
     penalty_lambda: float = 8.0,
     alpha: float = 1.,
-    gamma: float = 0.
+    gamma: float = 0.,
+    progress: bool = True,
 ) -> Dict[str, float]:
     if method == 'bertopic':
         from segmentation.bertopic_segmenter import (
@@ -65,7 +67,7 @@ def evaluate_on_docs(
     pk_scores = []
     wd_scores = []
     results = []
-    for d in tqdm(docs, desc=method):
+    for d in tqdm(docs, desc=method, disable=not progress):
         n = len(d.sentences)
         k_segments = len(d.true_boundaries) + 1
         # try:
@@ -108,6 +110,43 @@ def evaluate_on_docs(
         'WinDiff_mean': float(np.mean(wd_scores)),
         'WinDiff_median': float(np.median(wd_scores)),
     }, results
+
+def _metrics(results: List[SegmentResult]) -> Dict[str, float]:
+    pk = [r.pk_scores for r in results]
+    wd = [r.windiff_scores for r in results]
+    return {
+        'Pk_mean': float(np.mean(pk)),
+        'Pk_median': float(np.median(pk)),
+        'WinDiff_mean': float(np.mean(wd)),
+        'WinDiff_median': float(np.median(wd)),
+    }
+
+
+# Set before the pool forks, so workers share models without pickling them.
+_PAR_ARGS: Dict = {}
+
+
+def _eval_chunk(chunk: List[SegmentDoc]) -> List[SegmentResult]:
+    return evaluate_on_docs(chunk, progress=False, **_PAR_ARGS)[1]
+
+
+def evaluate_parallel(docs: List[SegmentDoc], method: str, workers: int, **kw):
+    """Same output as evaluate_on_docs, with documents split across CPU processes.
+
+    Only for CPU methods; results keep the input document order."""
+    global _PAR_ARGS
+    if workers <= 1 or method in ('bert', 'bertopic'):
+        return evaluate_on_docs(docs, method, **kw)
+    _PAR_ARGS = dict(method=method, **kw)
+    size = max(1, len(docs) // (workers * 16))
+    chunks = [docs[i:i + size] for i in range(0, len(docs), size)]
+    results: List[SegmentResult] = []
+    import multiprocessing as mp
+    with mp.get_context('fork').Pool(workers) as pool:
+        for part in tqdm(pool.imap(_eval_chunk, chunks), total=len(chunks), desc=f'{method} x{workers}'):
+            results.extend(part)
+    return _metrics(results), results
+
 
 def list_files_walk(start_path='.'):
     files_path = []
@@ -169,6 +208,8 @@ def main():
     parser.add_argument('--results-dir', type=str, default='results')
     parser.add_argument('--tag', type=str, default=None,
                         help='Name of the saved pickle (default: window-<window>)')
+    parser.add_argument('--workers', type=int, default=1,
+                        help='CPU processes for per-document evaluation (classic/topic methods only)')
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
@@ -236,7 +277,10 @@ def main():
         print(f'Evaluating {m}...')
         kw = {'lda_model': lda, 'bert_model': bert, 'encoder': encoder, 'window': args.window,
               'penalty_lambda': args.penalty, 'alpha': args.alpha, 'gamma': args.gamma}
-        res, seg_res = evaluate_on_docs(docs, m, **kw)
+        t0 = time.time()
+        res, seg_res = evaluate_parallel(docs, m, args.workers, **kw)
+        res['runtime_sec'] = round(time.time() - t0, 1)
+        res['workers'] = args.workers if m not in ('bert', 'bertopic') else 1
         if save:
             os.makedirs(os.path.join(out_root, m), exist_ok=True)
             with open(os.path.join(out_root, m, f'{tag}.pkl'), 'wb') as file:
@@ -263,7 +307,7 @@ def main():
     for name, metrics in results.items():
         print(f'{name}')
         for k, v in metrics.items():
-            print(f'  {k}: {v:.4f}')
+            print(f'  {k}: {v:.4f}' if isinstance(v, float) else f'  {k}: {v}')
 
 
 if __name__ == '__main__':
