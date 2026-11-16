@@ -46,6 +46,8 @@ _COMMON_SKIP = _ID_SKIP | {
     # Sundanese
     'Tumbu kaluar', 'Tutumbu kaluar', 'Tempo ogé', 'Tempo oge', 'Tingali ogé', 'Tingali oge',
     'Catetan', 'Référénsi', 'Bacaan salajengna',
+    # (from heading counts on the su dump)
+    'Tumbu luar', 'Tutumbu luar', 'Dicutat tina', 'Réferénsi', 'Baca ogé', 'Baca oge',
     # Minangkabau
     'Rujuakan', 'Pautan lua', 'Pranala lua', 'Caliak pulo', 'Caliak juo', 'Bacaan lanjuik',
     # Banjar / Betawi / others
