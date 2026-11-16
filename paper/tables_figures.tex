@@ -144,11 +144,11 @@ Random boundaries, $k$ given & 0.460 & 0.473 & 0.451 & 0.459 & 0.460 & 0.469\\
 \midrule
 TextTiling  & \tbd & \tbd & \tbd & \tbd & \tbd & \tbd\\
 C99         & 0.427 & 0.465 & 0.428 & 0.461 & 0.427 & 0.462\\
-CVS         & \textbf{0.372} & \textbf{0.386} & 0.363 & 0.373 & 0.369 & 0.381\\
+CVS         & 0.372 & 0.386 & 0.363 & 0.373 & 0.369 & 0.381\\
 \midrule
 TopicTiling & 0.415 & 0.427 & 0.421 & 0.429 & 0.422 & 0.432\\
 BayesSeg    & \pend & \pend & 0.371 & 0.358 & 0.383 & 0.368\\
-BayesSeg-MD & \pend & \pend & \textbf{0.320} & \textbf{0.330} & \textbf{0.334} & \textbf{0.346}\\
+BayesSeg-MD & \textbf{0.329} & \textbf{0.345} & \textbf{0.320} & \textbf{0.330} & \textbf{0.334} & \textbf{0.346}\\
 BeamSeg     & \pend & \pend & 0.381 & 0.373 & 0.386 & 0.379\\
 BERTopic    & \tbd & \tbd & \tbd & \tbd & \tbd & \tbd\\
 \midrule
@@ -179,7 +179,7 @@ LLM, few-shot ($k$ given)  & \tbd & \tbd & \tbd & \tbd & \tbd & \tbd\\
   legend style={at={(0.98,0.97)}, anchor=north east, font=\footnotesize, draw=none},
   legend cell align=left, unbounded coords=jump, enlarge x limits=0.08]
 \addplot[fill=gray!55, draw=none] coordinates {
-  (Random,0.460) (C99,0.427) (TopicTiling,0.415) (BeamSeg,nan) (BayesSeg,nan) (CVS,0.372) (BayesSeg-MD,nan)};
+  (Random,0.460) (C99,0.427) (TopicTiling,0.415) (BeamSeg,nan) (BayesSeg,nan) (CVS,0.372) (BayesSeg-MD,0.329)};
 \addplot[fill=blue!55, draw=none] coordinates {
   (Random,0.451) (C99,0.428) (TopicTiling,0.421) (BeamSeg,0.381) (BayesSeg,0.371) (CVS,0.363) (BayesSeg-MD,0.320)};
 \addplot[fill=orange!75, draw=none] coordinates {
@@ -187,7 +187,7 @@ LLM, few-shot ($k$ given)  & \tbd & \tbd & \tbd & \tbd & \tbd & \tbd\\
 \legend{Indonesian, Javanese, Sundanese}
 \end{axis}
 \end{tikzpicture}
-\caption{Segmentation error of the CPU methods with the heading echo removed. All methods beat random boundaries with known $k$; BayesSeg-MD is the most accurate on both regional languages. Encoder and LLM results are added in the final version.\label{fig:pk}}
+\caption{Segmentation error of the CPU methods with the heading echo removed. All methods beat random boundaries with known $k$; BayesSeg-MD is the most accurate in all three languages. Encoder and LLM results are added in the final version.\label{fig:pk}}
 \end{figure}
 
 % ---------------------------------------------------------------------
