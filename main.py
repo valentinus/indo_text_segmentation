@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import os
 import argparse
+import json
 import random
+from functools import partial
 from typing import List, Optional, Dict
 
 import numpy as np
@@ -11,46 +13,55 @@ import pickle
 
 import nltk
 
-import torch
-
 from segmentation.traditional import c99_segment, cvs_segment, run_texttiling
-from segmentation.bert_segmenter import BertSegmenter
-from segmentation.lda_segmenter import LdaTopicTiling
 from segmentation.bayes import BayesSeg, BayesSegMD, BeamSeg
-from segmentation.bertopic_segmenter import SentenceEncoder, bertopic_topic_vectors, cohshift_scores, pick_boundaries_from_scores
 
+from languages import LANGUAGES, get_language
 from utils import SegmentDoc, SegmentResult, pk_metric, windowdiff, parse_headings_and_content
 from multiprocessing import Pool, cpu_count
 from tqdm import tqdm
 
-SEED = 42
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
+# torch / transformers / gensim / bertopic are imported lazily, only for the
+# methods that need them, so classic methods also run on CPU-only machines.
+
+ALL_METHODS = ['texttiling', 'c99', 'cvs', 'topictiling', 'bayesseg', 'bayesseg_md', 'beamseg', 'bert', 'bertopic']
+DEFAULT_BERT_MODEL = 'LazarusNLP/congen-indobert-base'
+DEFAULT_EMBED_MODEL = 'Qwen/Qwen3-Embedding-0.6B'
 
 
 def set_seed(seed: int = 42):
     random.seed(seed)
     np.random.seed(seed)
+    try:
+        import torch
+    except ImportError:
+        return
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-        
+
+
+set_seed(42)
+
+
 
 def evaluate_on_docs(
     docs: List[SegmentDoc],
     method: str,
-    lda_model: Optional[LdaTopicTiling] = None,
-    bert_model: Optional[BertSegmenter] = None,
+    lda_model=None,
+    bert_model=None,
+    encoder=None,
     window: int = 3,
     penalty_lambda: float = 8.0,
     alpha: float = 1.,
     gamma: float = 0.
 ) -> Dict[str, float]:
-    encoder: Optional[SentenceEncoder] = None
-    if method in ('bertopic'):
-        encoder = SentenceEncoder(device='cuda')
-    
+    if method == 'bertopic':
+        from segmentation.bertopic_segmenter import (
+            SentenceEncoder, bertopic_topic_vectors, cohshift_scores, pick_boundaries_from_scores)
+        if encoder is None:
+            encoder = SentenceEncoder()
+
     pk_scores = []
     wd_scores = []
     results = []
@@ -102,78 +113,153 @@ def list_files_walk(start_path='.'):
     files_path = []
     for root, dirs, files in os.walk(start_path):
         for file in files:
-            files_path.append(os.path.join(root, file))
+            if file.startswith('wiki_'):
+                files_path.append(os.path.join(root, file))
     return files_path
 
-def _process_one(path):
-    return parse_headings_and_content(path)
+
+def default_doc_path(lang: str) -> str:
+    # The original Indonesian corpus lives in text/; other languages in data/wiki/<lang>/text.
+    if lang == 'id' and os.path.isdir('text'):
+        return 'text'
+    return os.path.join('data', 'wiki', lang, 'text')
+
+
+def load_docs(files_path: List[str], parse_kw: Dict) -> List[SegmentDoc]:
+    docs: List[SegmentDoc] = []
+    fn = partial(parse_headings_and_content, **parse_kw)
+    # imap (ordered) keeps the document order deterministic across runs.
+    with Pool(processes=cpu_count()) as pool:
+        for chunk in tqdm(pool.imap(fn, files_path, chunksize=8),
+                          total=len(files_path), desc="Parsing"):
+            docs.extend(chunk)
+    return docs
+
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--doc-path', type=str, help='Document path for the dataset')
+    parser.add_argument('--lang', type=str, default='id',
+                        help=f"Wikipedia language code ({', '.join(LANGUAGES)}; others allowed)")
+    parser.add_argument('--doc-path', type=str, default=None,
+                        help='wikiextractor output dir (default: text/ for id, data/wiki/<lang>/text otherwise)')
     parser.add_argument('--lda-topics', type=int, default=50)
     parser.add_argument('--lda-passes', type=int, default=5)
     parser.add_argument('--window', type=int, default=3, help='Sliding window size (sentences)')
-    parser.add_argument('--method', type=str, default='all',
-                        choices=['all','texttiling','c99','cvs','topictiling','bayesseg','bayesseg_md','beamseg','bert','bertopic'])
+    parser.add_argument('--method', type=str, default='all', choices=['all'] + ALL_METHODS)
     parser.add_argument('--penalty', type=float, default=8.0, help='MDL penalty (BayesSeg-MD)')
     parser.add_argument('--alpha', type=float, default=1.0, help='coherence exponent')
     parser.add_argument('--gamma', type=float, default=0.0, help='intra-window concentration exponent')
-    parser.add_argument('--save', type=bool, default=True, help='Save the results')
+    parser.add_argument('--bert-model', type=str, default=DEFAULT_BERT_MODEL,
+                        help='HF encoder for the "bert" method, e.g. LazarusNLP/NusaBERT-base, sentence-transformers/LaBSE')
+    parser.add_argument('--embed-model', type=str, default=DEFAULT_EMBED_MODEL,
+                        help='HF encoder for the "bertopic" method')
+    parser.add_argument('--device', type=str, default=None, help='cuda / cpu (default: auto)')
+    # Document filters (defaults = original Indonesian setup)
+    parser.add_argument('--min-headings', type=int, default=3)
+    parser.add_argument('--min-boundaries', type=int, default=3)
+    parser.add_argument('--min-sentences', type=int, default=11)
+    parser.add_argument('--strip-heading-echo', action='store_true',
+                        help='Drop the repeated heading sentence ("Sajarah.") wikiextractor puts at each section start')
+    parser.add_argument('--skip-headings-file', type=str, default=None,
+                        help='Text file, one boilerplate heading per line (overrides languages.py)')
+    parser.add_argument('--max-docs', type=int, default=None,
+                        help='Evaluate on a seeded random sample of N documents')
+    parser.add_argument('--max-files', type=int, default=None, help='Only parse the first N files (quick tests)')
+    parser.add_argument('--save', action=argparse.BooleanOptionalAction, default=True, help='Save the results')
+    parser.add_argument('--results-dir', type=str, default='results')
+    parser.add_argument('--tag', type=str, default=None,
+                        help='Name of the saved pickle (default: window-<window>)')
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
     set_seed(args.seed)
 
-    
     try:
-        nltk.download('punkt')
-        nltk.download('punkt_tab')
+        nltk.download('punkt', quiet=True)
+        nltk.download('punkt_tab', quiet=True)
+        nltk.download('stopwords', quiet=True)  # used by TextTiling
     except Exception:
         pass
-    
-    directory_path = args.doc_path
+
+    lang = get_language(args.lang)
+    directory_path = args.doc_path or default_doc_path(args.lang)
+    if not os.path.isdir(directory_path):
+        raise SystemExit(f'No corpus at {directory_path}. Run: python scripts/prepare_wiki.py --lang {args.lang}')
     files_path = sorted(list_files_walk(directory_path))
-    docs = []
-    with Pool(processes=cpu_count()) as pool:
-        for chunk in tqdm(pool.imap_unordered(_process_one, files_path, chunksize=32), 
-                          total=len(files_path), desc="Parsing"):
-            docs.extend(chunk)
-            
-    
+    if args.max_files:
+        files_path = files_path[:args.max_files]
+
+    skip_headings = None
+    if args.skip_headings_file:
+        with open(args.skip_headings_file, encoding='utf-8') as f:
+            skip_headings = [l.strip() for l in f if l.strip()]
+    parse_kw = dict(lang=args.lang, skip_headings=skip_headings,
+                    min_headings=args.min_headings, min_boundaries=args.min_boundaries,
+                    min_sentences=args.min_sentences, strip_heading_echo=args.strip_heading_echo)
+
+    print(f'Language: {args.lang} ({lang.name}) | corpus: {directory_path} | files: {len(files_path)}')
+    docs = load_docs(files_path, parse_kw)
+    if args.max_docs and len(docs) > args.max_docs:
+        docs = random.Random(args.seed).sample(docs, args.max_docs)
+    if not docs:
+        raise SystemExit('No documents passed the filters (try lowering --min-headings / --min-sentences).')
+    print(f'Documents: {len(docs)} | avg sentences: {np.mean([len(d.sentences) for d in docs]):.1f} '
+          f'| avg segments: {np.mean([len(d.true_boundaries) + 1 for d in docs]):.1f}')
+
     results = {}
     save = args.save
+    tag = args.tag or f'window-{args.window}'
+    out_root = os.path.join(args.results_dir, args.lang)
 
-    need_lda = args.method in ('all','topictiling',)
+    methods = ALL_METHODS if args.method == 'all' else [args.method]
+
     lda = None
-    if need_lda:
+    if 'topictiling' in methods:
+        from segmentation.lda_segmenter import LdaTopicTiling
         print('Training LDA for topic-based methods...')
-        lda = LdaTopicTiling(num_topics=args.lda_topics, passes=args.lda_passes)
+        lda = LdaTopicTiling(num_topics=args.lda_topics, passes=args.lda_passes, seed=args.seed)
         lda.fit((d.sentences for d in docs), max_docs=3000)
 
-    need_bert = args.method in ('all','bert')
     bert = None
-    if need_bert:
-        print('Loading BERT encoder...')
-        bert = BertSegmenter()
+    if 'bert' in methods:
+        from segmentation.bert_segmenter import BertSegmenter
+        print(f'Loading BERT encoder {args.bert_model}...')
+        bert = BertSegmenter(model_name=args.bert_model, device=args.device)
+
+    encoder = None
+    if 'bertopic' in methods:
+        from segmentation.bertopic_segmenter import SentenceEncoder
+        print(f'Loading sentence encoder {args.embed_model}...')
+        encoder = SentenceEncoder(model_name=args.embed_model, device=args.device)
 
     def run(m: str):
         print(f'Evaluating {m}...')
-        kw = {'lda_model': lda, 'bert_model': bert, 'window': args.window, 'penalty_lambda': args.penalty}
+        kw = {'lda_model': lda, 'bert_model': bert, 'encoder': encoder, 'window': args.window,
+              'penalty_lambda': args.penalty, 'alpha': args.alpha, 'gamma': args.gamma}
         res, seg_res = evaluate_on_docs(docs, m, **kw)
         if save:
-            with open(f'results/{m}/congen_window-9.pkl', 'wb') as file:
+            os.makedirs(os.path.join(out_root, m), exist_ok=True)
+            with open(os.path.join(out_root, m, f'{tag}.pkl'), 'wb') as file:
                 pickle.dump(seg_res, file, protocol=pickle.HIGHEST_PROTOCOL)
         results[m] = res
         print(m + ':', res)
 
-    if args.method == 'all':
-        for m in ['texttiling','c99','cvs','topictiling','bayesseg','bayesseg_md','beamseg','bert', 'bertopic']:
-            run(m)
-    else:
-        run(args.method)
+    for m in methods:
+        run(m)
 
-    print('=== Summary (lower is better) ===')
+    if save:
+        os.makedirs(out_root, exist_ok=True)
+        summary_path = os.path.join(out_root, f'summary_{tag}.json')
+        summary = {'lang': args.lang, 'results': {}}
+        if os.path.exists(summary_path):  # merge with earlier single-method runs
+            with open(summary_path, encoding='utf-8') as f:
+                summary = json.load(f)
+        summary.setdefault('results', {}).update(results)
+        summary.setdefault('runs', {}).update({m: {'n_docs': len(docs), 'args': vars(args)} for m in results})
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    print(f'=== Summary [{args.lang}] (lower is better) ===')
     for name, metrics in results.items():
         print(f'{name}')
         for k, v in metrics.items():

@@ -74,6 +74,11 @@ _FIX = (
     '{ind}type = line[l-1]\n'
 )
 
+# wikiextractor 3.1.0 makes --html imply --links, leaving escaped
+# `&lt;a href=...&gt;` markup in the text. The Indonesian corpus has none, so
+# turn that off to keep the same format.
+_HTML_LINKS = re.compile(r'^(?P<ind>[ \t]+)if args\.html:\n(?P=ind)[ \t]+(?P<lhs>(?:Extractor\.)?keepLinks) = True\n', re.M)
+
 
 def patched_wikiextractor(workdir: str) -> str:
     """Copy the installed wikiextractor into `workdir` with the list bug fixed.
@@ -86,16 +91,22 @@ def patched_wikiextractor(workdir: str) -> str:
     dst = os.path.join(dst_root, 'wikiextractor')
     shutil.rmtree(dst_root, ignore_errors=True)
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns('__pycache__'))
-    path = os.path.join(dst, 'extract.py')
-    with open(path, encoding='utf-8') as f:
-        code = f.read()
-    code, n = _BUGGY.subn(lambda m: _FIX.format(ind=m.group('ind')), code)
-    if n:
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(code)
-        print('[patch] applied wikiextractor list-nesting fix')
-    else:
-        print('[patch] buggy line not found (newer wikiextractor?), running unpatched')
+
+    def patch(fname, pattern, repl, label):
+        path = os.path.join(dst, fname)
+        with open(path, encoding='utf-8') as f:
+            code = f.read()
+        code, n = pattern.subn(repl, code)
+        if n:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(code)
+            print(f'[patch] {label}')
+        else:
+            print(f'[patch] not needed / not found: {label}')
+
+    patch('extract.py', _BUGGY, lambda m: _FIX.format(ind=m.group('ind')),
+          'list-nesting IndexError fix')
+    patch('WikiExtractor.py', _HTML_LINKS, '', '--html no longer implies --links')
     return dst_root
 
 

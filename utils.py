@@ -1,19 +1,29 @@
 from __future__ import annotations
 
+import re
+
 from bs4 import BeautifulSoup
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 import numpy as np
 
 
 import spacy
 
-print(spacy.require_gpu())
+from languages import get_language
 
+# The rule-based sentencizer does not need a GPU; prefer_gpu() does not fail
+# on CPU-only machines (require_gpu() did).
+spacy.prefer_gpu()
+
+# Indonesian tokenizer rules work well for the Latin-script regional languages.
+# Add Balinese (U+1B5E/U+1B5F) and Buginese/Lontara (U+1A1E/U+1A1F) full stops.
+_EXTRA_PUNCT = ['\u1b5e', '\u1b5f', '\u1a1e', '\u1a1f']
 nlp = spacy.blank("id")
-nlp.add_pipe("sentencizer")
+_sentencizer = nlp.add_pipe("sentencizer")
+_sentencizer.punct_chars = set(_sentencizer.punct_chars) | set(_EXTRA_PUNCT)
 
     
 @dataclass
@@ -34,14 +44,53 @@ class SegmentResult:
 
 
 
+# Corpora extracted with wikiextractor 3.1.0 --html keep wiki links as escaped
+# <a href="...">text</a>; keep only the anchor text. (No-op for the Indonesian corpus.)
+_LINK_TAG = re.compile(r'</?a\b[^>]*>')
+
+
+def strip_link_markup(text: str) -> str:
+    return _LINK_TAG.sub('', text) if '<a' in text or '</a' in text else text
+
+
 def spacy_sent_tokenize(text: List[str]):
     doc = nlp(text)
     return [token.text for token in doc], [sent.text.strip() for sent in doc.sents if sent.text.strip()]
 
 
-def parse_headings_and_content(file_path):
+def parse_headings_and_content(
+    file_path: str,
+    lang: str = 'id',
+    skip_headings: Optional[Iterable[str]] = None,
+    case_sensitive_headings: Optional[bool] = None,
+    min_headings: int = 3,
+    min_boundaries: int = 3,
+    min_sentences: int = 11,
+    strip_heading_echo: bool = False,
+):
+    """Parse a wikiextractor (--html) file into SegmentDocs.
+
+    Gold boundaries are the <h2>/<h3> section starts. Defaults reproduce the
+    original Indonesian setup.
+
+    lang:               wiki code (id, jv, su, ...) -> boilerplate headings to skip
+    skip_headings:      override the language's boilerplate-heading list
+    case_sensitive_headings: override the language's matching rule
+                        (Indonesian: exact match, others: case-insensitive)
+    strip_heading_echo: wikiextractor repeats each heading as a sentence
+                        ("Sajarah.") at the start of its section; drop it so
+                        the heading text does not leak into the input.
+    """
     with open(file_path, 'r', encoding='utf-8') as f:
         html = f.read()
+
+    language = get_language(lang)
+    if skip_headings is None:
+        skip_headings = language.skip_headings
+    if case_sensitive_headings is None:
+        case_sensitive_headings = language.case_sensitive_headings
+    norm = (lambda h: h.strip()) if case_sensitive_headings else (lambda h: h.strip().casefold())
+    skip = {norm(h) for h in skip_headings}
 
     soup = BeautifulSoup(html, 'html.parser')
 
@@ -51,9 +100,10 @@ def parse_headings_and_content(file_path):
         segment, segment_length, segment_count = [], [], 0
         token_count = 0
         headings = doc.find_all(['h2', 'h3'])
-        if len(headings) < 3:
+        if len(headings) < min_headings:
             continue
-        
+        echoes = {h.get_text(strip=True) + '.' for h in doc.find_all(['h2', 'h3', 'h4'])}
+
         content_temp = list()
         if len(content_temp) > 1:
             tokens, content_temp = spacy_sent_tokenize(str(headings[0].previous_sibling).strip())
@@ -64,7 +114,7 @@ def parse_headings_and_content(file_path):
         for i, heading in enumerate(headings):
             tag_name = heading.name
             heading_text = heading.get_text(strip=True)
-            if heading_text == 'Catatan' or heading_text == 'Referensi' or heading_text == 'Lihat pula' or heading_text == 'Pranala luar' or heading_text == 'Bahan bacaan terkait':
+            if norm(heading_text) in skip:
                 continue
             content_lines = []
             for sibling in heading.next_siblings:
@@ -78,10 +128,15 @@ def parse_headings_and_content(file_path):
                 if text:
                     content_lines.append(text)
 
-            content = "\n\n".join(content_lines).strip()
+            content = strip_link_markup("\n\n".join(content_lines)).strip()
+            if strip_heading_echo:
+                lines = content.split('\n')
+                while lines and lines[0].strip() in echoes:
+                    lines.pop(0)
+                content = '\n'.join(lines).strip()
             if content == "":
                 continue
-            
+
             tokens, content = spacy_sent_tokenize(content)
             if len(content) > 1:
                 token_count += len(tokens)
@@ -89,15 +144,15 @@ def parse_headings_and_content(file_path):
                 segment_length.append(len(content))
                 segment.append(segment_count)
                 content_temp.extend(content)
-            
-        if len(segment[:-1]) > 2 and len(content_temp) > 10:
-            all_result.append(SegmentDoc(sentences=content_temp, true_boundaries=segment[:-1], 
+
+        if len(segment[:-1]) >= min_boundaries and len(content_temp) >= min_sentences:
+            all_result.append(SegmentDoc(sentences=content_temp, true_boundaries=segment[:-1],
                                          token_count=token_count, segment_length=segment_length,
-                                         segment_type='wiki_indo'))
+                                         segment_type='wiki_indo' if lang == 'id' else f'wiki_{lang}'))
 
     return all_result
 
-    
+
 def boundaries_to_segmentation_vector(n_sents: int, boundaries: List[int]) -> List[int]:
     seg = [0]*n_sents
     for b in sorted(boundaries):

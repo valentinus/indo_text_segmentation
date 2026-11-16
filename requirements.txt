@@ -1,0 +1,15 @@
+# Core (parsing + classic methods: texttiling, c99, cvs, bayesseg*, beamseg)
+numpy
+scikit-learn
+nltk
+spacy
+beautifulsoup4
+tqdm
+# topictiling
+gensim
+# bert / bertopic (GPU recommended)
+torch
+transformers
+bertopic[hdbscan]
+# corpus preparation (scripts/prepare_wiki.py)
+wikiextractor>=3.1.0

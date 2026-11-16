@@ -14,6 +14,9 @@ class Language:
     code: str
     name: str
     skip_headings: FrozenSet[str] = field(default_factory=frozenset)
+    # Indonesian matched headings case-sensitively in the original experiments;
+    # keep that for reproducibility. Other languages match case-insensitively.
+    case_sensitive_headings: bool = False
 
     @property
     def dbname(self) -> str:
@@ -37,6 +40,9 @@ _COMMON_SKIP = _ID_SKIP | {
     # Javanese
     'Cathetan', 'Cathetan suku', 'Pranala njaba', 'Pranala jaba', 'Pranala jawi',
     'Deleng uga', 'Delengen uga', 'Waosan salajengipun', 'Kapustakan', 'Sumber rujukan',
+    # (from heading counts on the jv dump)
+    'Uga delengen', 'Réferènsi', 'Referènsi', 'Cathetan sikil', 'Pranala njawi', 'Ugi pirsani',
+    'Sumber lan pranala jaba', 'Sumber lan pranala njaba', 'Rujukan lan cathetan', 'Gladri',
     # Sundanese
     'Tumbu kaluar', 'Tutumbu kaluar', 'Tempo ogé', 'Tempo oge', 'Tingali ogé', 'Tingali oge',
     'Catetan', 'Référénsi', 'Bacaan salajengna',
@@ -47,7 +53,7 @@ _COMMON_SKIP = _ID_SKIP | {
 }
 
 LANGUAGES: Dict[str, Language] = {l.code: l for l in [
-    Language('id', 'Indonesian', frozenset(_ID_SKIP)),
+    Language('id', 'Indonesian', frozenset(_ID_SKIP), case_sensitive_headings=True),
     Language('jv', 'Javanese', frozenset(_COMMON_SKIP)),
     Language('su', 'Sundanese', frozenset(_COMMON_SKIP)),
     Language('min', 'Minangkabau', frozenset(_COMMON_SKIP)),
