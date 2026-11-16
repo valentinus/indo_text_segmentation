@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -59,6 +60,45 @@ def download(url: str, dest: str) -> None:
     os.replace(tmp, dest)
 
 
+# wikiextractor (<= 3.1.0) crashes with `IndexError: string index out of range`
+# at `type = line[l-1]` in extract.compact() when, in --html mode, a list item is
+# shorter than the open list nesting (e.g. "* a" / "** b" / "*"). We run a
+# patched copy of the installed package instead of editing site-packages.
+_BUGGY = re.compile(r'^(?P<ind>[ \t]+)type = line\[l-1\]\n', re.M)
+_FIX = (
+    '{ind}if l > len(line):  # patched: item shorter than current nesting\n'
+    '{ind}    for extra in reversed(listLevel[len(line):]):\n'
+    '{ind}        page.append(listClose[extra])\n'
+    '{ind}    listLevel = listLevel[:len(line)]\n'
+    '{ind}    l = len(line)\n'
+    '{ind}type = line[l-1]\n'
+)
+
+
+def patched_wikiextractor(workdir: str) -> str:
+    """Copy the installed wikiextractor into `workdir` with the list bug fixed.
+
+    Returns a directory to prepend to PYTHONPATH (works for fork and spawn)."""
+    import wikiextractor
+
+    src = os.path.dirname(wikiextractor.__file__)
+    dst_root = os.path.join(workdir, '.wikiextractor_patched')
+    dst = os.path.join(dst_root, 'wikiextractor')
+    shutil.rmtree(dst_root, ignore_errors=True)
+    shutil.copytree(src, dst, ignore=shutil.ignore_patterns('__pycache__'))
+    path = os.path.join(dst, 'extract.py')
+    with open(path, encoding='utf-8') as f:
+        code = f.read()
+    code, n = _BUGGY.subn(lambda m: _FIX.format(ind=m.group('ind')), code)
+    if n:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(code)
+        print('[patch] applied wikiextractor list-nesting fix')
+    else:
+        print('[patch] buggy line not found (newer wikiextractor?), running unpatched')
+    return dst_root
+
+
 def extract(dump: str, out_dir: str, processes: int, bytes_per_file: str, overwrite: bool) -> None:
     if os.path.isdir(out_dir) and os.listdir(out_dir):
         if not overwrite:
@@ -71,8 +111,14 @@ def extract(dump: str, out_dir: str, processes: int, bytes_per_file: str, overwr
            '-b', bytes_per_file, '-o', out_dir, dump]
     if processes > 0:
         cmd[4:4] = ['--processes', str(processes)]
+    env = dict(os.environ)
+    patched = patched_wikiextractor(os.path.dirname(os.path.abspath(out_dir)))
+    env['PYTHONPATH'] = patched + os.pathsep + env.get('PYTHONPATH', '')
     print('[run]', ' '.join(cmd))
-    subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(cmd, check=True, env=env)
+    finally:
+        shutil.rmtree(patched, ignore_errors=True)
 
 
 def main() -> None:
