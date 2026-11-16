@@ -36,10 +36,10 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from utils import SegmentResult  # noqa: E402,F401  (needed to unpickle)
+from utils import SegmentResult  # noqa: E402  (also needed to unpickle)
 
 METHOD_NAMES = {
-    'llm_mock_k_0shot': 'Random (k given)', 'texttiling': 'TextTiling', 'c99': 'C99', 'cvs': 'CVS',
+    'llm_mock_k_0shot': 'Random (k given)', 'no_boundaries': 'No boundaries', 'texttiling': 'TextTiling', 'c99': 'C99', 'cvs': 'CVS',
     'topictiling': 'TopicTiling', 'bayesseg': 'BayesSeg', 'bayesseg_md': 'BayesSeg-MD',
     'beamseg': 'BeamSeg', 'bertopic': 'BERTopic', 'bert': 'Sentence encoder',
 }
@@ -58,7 +58,21 @@ def load_runs(roots: List[str], random_root: str, lang: str, tag: str) -> Dict[s
     if random_root and tag == 'stripped':
         for path in glob.glob(os.path.join(random_root, lang, 'llm_mock_k_0shot', '*.pkl')):
             runs['llm_mock_k_0shot'] = pickle.load(open(path, 'rb'))
+    if runs:
+        runs['no_boundaries'] = no_boundary_run(next(iter(runs.values())))
     return runs
+
+
+def no_boundary_run(template: list) -> list:
+    """Baseline that predicts no boundary at all (what the old BeamSeg returned)."""
+    from utils import pk_metric, windowdiff
+    out = []
+    for r in template:
+        n = len(r.sentences)
+        out.append(SegmentResult(sentences=r.sentences, true_boundaries=r.true_boundaries, pred_boundaries=[],
+                                 pk_scores=pk_metric(r.true_boundaries, [], n),
+                                 windiff_scores=windowdiff(r.true_boundaries, [], n)))
+    return out
 
 
 def check_aligned(runs: Dict[str, list]) -> int:
@@ -247,7 +261,8 @@ def main() -> None:
                'significance_pk': significance(stripped, 'pk'),
                'significance_wd': significance(stripped, 'wd'),
                'echo': echo_pairs(echo, stripped),
-               'errors': error_analysis({m: r for m, r in stripped.items() if m != 'llm_mock_k_0shot'})}
+               'errors': error_analysis({m: r for m, r in stripped.items()
+                                         if m not in ('llm_mock_k_0shot', 'no_boundaries')})}
         report[lang] = rep
         for metric in ('pk', 'wd'):
             sig = rep[f'significance_{metric}']
