@@ -65,55 +65,54 @@ def evaluate_on_docs(
         if encoder is None:
             encoder = SentenceEncoder()
 
-    pk_scores = []
-    wd_scores = []
+    def segment_one(d: SegmentDoc, k_segments: int) -> List[int]:
+        if method == 'texttiling':
+            return run_texttiling(d.sentences)
+        if method == 'c99':
+            return c99_segment(d.sentences, window=max(5, 2*window+1), k_segments=k_segments)
+        if method == 'cvs':
+            return cvs_segment(d.sentences, window=window, k_segments=k_segments)
+        if method == 'topictiling':
+            assert lda_model is not None
+            return lda_model.segment(d.sentences, k_segments=k_segments, window=window)
+        if method == 'bayesseg':
+            return BayesSeg().segment_k(d.sentences, k_segments=k_segments)
+        if method == 'bayesseg_md':
+            return BayesSegMD(penalty_lambda=penalty_lambda).segment(d.sentences)
+        if method == 'beamseg':
+            return BeamSeg(beam_size=8).segment_k(d.sentences, k_segments=k_segments)
+        if method == 'bert':
+            assert bert_model is not None
+            return bert_model.segment(d.sentences, k_segments=k_segments, window=window)
+        if method == 'llm':
+            assert llm_model is not None
+            return llm_model.segment(d.sentences, k_segments=k_segments)
+        if method == 'bertopic':
+            T = bertopic_topic_vectors(d.sentences, encoder)
+            scores, idxs = cohshift_scores(T, windows=None, metric='cos', alpha=alpha, gamma=gamma)
+            return pick_boundaries_from_scores(scores, idxs, k_segments=k_segments)
+        raise KeyError(method)
+
     results = []
+    n_failed = 0
     for d in tqdm(docs, desc=method, disable=not progress):
         n = len(d.sentences)
         k_segments = len(d.true_boundaries) + 1
-        # try:
-        if method == 'texttiling':
-            pred = run_texttiling(d.sentences)
-        elif method == 'c99':
-            pred = c99_segment(d.sentences, window=max(5, 2*window+1), k_segments=k_segments)
-        elif method == 'cvs':
-            pred = cvs_segment(d.sentences, window=window, k_segments=k_segments)
-        elif method == 'topictiling':
-            assert lda_model is not None
-            pred = lda_model.segment(d.sentences, k_segments=k_segments, window=window)
-        elif method == 'bayesseg':
-            pred = BayesSeg().segment_k(d.sentences, k_segments=k_segments)
-        elif method == 'bayesseg_md':
-            pred = BayesSegMD(penalty_lambda=penalty_lambda).segment(d.sentences)
-        elif method == 'beamseg':
-            pred = BeamSeg(beam_size=8).segment_k(d.sentences, k_segments=k_segments)
-        elif method == 'bert':
-            assert bert_model is not None
-            pred = bert_model.segment(d.sentences, k_segments=k_segments, window=window)
-        elif method == 'llm':
-            assert llm_model is not None
-            pred = llm_model.segment(d.sentences, k_segments=k_segments)
-        elif method == 'bertopic':
-            T = bertopic_topic_vectors(d.sentences, encoder)
-            # pred = boundaries_from_topic_vectors(T, k_segments=k_segments, window=window, metric='cos')
-            scores, idxs = cohshift_scores(T, windows=None, metric='cos', alpha=alpha, gamma=gamma)
-            pred = pick_boundaries_from_scores(scores, idxs, k_segments=k_segments)
-        else:
-            raise ValueError(method)
-        # except:
-        #     pass
+        try:
+            pred = segment_one(d, k_segments)
+        except ValueError:
+            # e.g. TF-IDF keeps no terms (min_df/max_df) on a very repetitive document:
+            # predict no boundary and count it instead of aborting the run.
+            pred = []
+            n_failed += 1
         _pk = pk_metric(d.true_boundaries, pred, n)
         _wd = windowdiff(d.true_boundaries, pred, n)
-        pk_scores.append(_pk)
-        wd_scores.append(_wd)
-        results.append(SegmentResult(sentences=d.sentences, true_boundaries=d.true_boundaries, 
+        results.append(SegmentResult(sentences=d.sentences, true_boundaries=d.true_boundaries,
                                      pred_boundaries=pred, pk_scores=_pk, windiff_scores=_wd))
-    return {
-        'Pk_mean': float(np.mean(pk_scores)),
-        'Pk_median': float(np.median(pk_scores)),
-        'WinDiff_mean': float(np.mean(wd_scores)),
-        'WinDiff_median': float(np.median(wd_scores)),
-    }, results
+    metrics = _metrics(results)
+    metrics['n_failed'] = n_failed
+    return metrics, results
+
 
 def _metrics(results: List[SegmentResult]) -> Dict[str, float]:
     pk = [r.pk_scores for r in results]
@@ -130,8 +129,9 @@ def _metrics(results: List[SegmentResult]) -> Dict[str, float]:
 _PAR_ARGS: Dict = {}
 
 
-def _eval_chunk(chunk: List[SegmentDoc]) -> List[SegmentResult]:
-    return evaluate_on_docs(chunk, progress=False, **_PAR_ARGS)[1]
+def _eval_chunk(chunk: List[SegmentDoc]):
+    metrics, results = evaluate_on_docs(chunk, progress=False, **_PAR_ARGS)
+    return results, metrics['n_failed']
 
 
 def evaluate_parallel(docs: List[SegmentDoc], method: str, workers: int, **kw):
@@ -145,11 +145,15 @@ def evaluate_parallel(docs: List[SegmentDoc], method: str, workers: int, **kw):
     size = max(1, len(docs) // (workers * 16))
     chunks = [docs[i:i + size] for i in range(0, len(docs), size)]
     results: List[SegmentResult] = []
+    n_failed = 0
     import multiprocessing as mp
     with mp.get_context('fork').Pool(workers) as pool:
-        for part in tqdm(pool.imap(_eval_chunk, chunks), total=len(chunks), desc=f'{method} x{workers}'):
+        for part, nf in tqdm(pool.imap(_eval_chunk, chunks), total=len(chunks), desc=f'{method} x{workers}'):
             results.extend(part)
-    return _metrics(results), results
+            n_failed += nf
+    metrics = _metrics(results)
+    metrics['n_failed'] = n_failed
+    return metrics, results
 
 
 def list_files_walk(start_path='.'):
