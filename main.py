@@ -215,6 +215,8 @@ def main():
     parser.add_argument('--llm-no-fallback', action='store_true',
                         help='Disable Claude server-side refusal fallback (no answers from another model)')
     parser.add_argument('--llm-concurrency', type=int, default=8)
+    parser.add_argument('--llm-4bit', action='store_true',
+                        help='hf backend: load the model in 4-bit (bitsandbytes), e.g. 8-9B models on a 16 GB GPU')
     # Document filters (defaults = original Indonesian setup)
     parser.add_argument('--min-headings', type=int, default=3)
     parser.add_argument('--min-boundaries', type=int, default=3)
@@ -309,11 +311,12 @@ def main():
                 raise SystemExit('Not enough held-out documents for few-shot examples (use --max-docs).')
             shots = random.Random(args.seed + 1).sample(pool, args.llm_shots)
         llm_name = f"llm_{args.llm_model.replace('/', '_')}_{args.llm_mode}_{args.llm_shots}shot"
-        cache = os.path.join(out_root, 'llm_cache', f'{llm_name}_{args.llm_effort}.jsonl')
+        variant = args.llm_effort if args.llm_backend == 'anthropic' else ('4bit' if args.llm_4bit else 'bf16')
+        cache = os.path.join(out_root, 'llm_cache', f'{llm_name}_{variant}.jsonl')
         llm = LLMSegmenter(backend=args.llm_backend, model=args.llm_model, mode=args.llm_mode,
                            language=lang.name, shots=shots, effort=args.llm_effort,
                            fallback=not args.llm_no_fallback, cache_path=cache,
-                           concurrency=args.llm_concurrency, seed=args.seed)
+                           concurrency=args.llm_concurrency, seed=args.seed, hf_4bit=args.llm_4bit)
         print(f'LLM: {args.llm_backend}/{args.llm_model} mode={args.llm_mode} shots={args.llm_shots} '
               f'effort={args.llm_effort} fallback={not args.llm_no_fallback} cache={cache}')
         llm.prefetch(docs, desc=llm_name)

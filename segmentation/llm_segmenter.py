@@ -85,6 +85,8 @@ class LLMSegmenter:
         concurrency: int = 8,
         max_tokens: int = 16000,
         seed: int = 42,
+        hf_4bit: bool = False,
+        hf_max_new_tokens: int = 256,
     ):
         assert mode in ('k', 'free'), mode
         self.backend, self.model, self.mode = backend, model, mode
@@ -92,6 +94,7 @@ class LLMSegmenter:
         self.effort, self.fallback = effort, fallback
         self.concurrency, self.max_tokens, self.seed = concurrency, max_tokens, seed
         self.cache_path = cache_path
+        self.hf_4bit, self.hf_max_new_tokens = hf_4bit, hf_max_new_tokens
         self._cache: Dict[str, dict] = {}
         self._lock = threading.Lock()
         self._client = None
@@ -133,7 +136,8 @@ class LLMSegmenter:
 
     def _key(self, sentences: Sequence[str], k_segments: Optional[int]) -> str:
         h = hashlib.sha1()
-        for part in (self.backend, self.model, self.mode, str(self.effort), SYSTEM_PROMPT,
+        effort = str(self.effort) if self.backend == 'anthropic' else ('4bit' if self.hf_4bit else 'bf16')
+        for part in (self.backend, self.model, self.mode, effort, SYSTEM_PROMPT,
                      self._examples_block(), self._task_text(sentences, k_segments)):
             h.update(part.encode('utf-8'))
             h.update(b'\x00')
@@ -183,34 +187,66 @@ class LLMSegmenter:
             "cache_write_tokens": getattr(u, "cache_creation_input_tokens", 0) or 0,
         }
 
-    def _call_hf(self, sentences, k_segments) -> dict:
+    def _load_hf(self):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        tok = AutoTokenizer.from_pretrained(self.model)
+        kw = dict(device_map='auto')
+        if self.hf_4bit:
+            from transformers import BitsAndBytesConfig  # needs: pip install bitsandbytes
+            kw['quantization_config'] = BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_quant_type='nf4')
+        else:
+            kw['torch_dtype'] = torch.bfloat16
+        mdl = AutoModelForCausalLM.from_pretrained(self.model, **kw)
+        mdl.eval()
+        return tok, mdl
+
+    def _hf_prompt_ids(self, tok, sentences, k_segments):
+        user = (self._examples_block() + "\n" + self._task_text(sentences, k_segments)).strip()
+        variants = [
+            [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}],
+            # Gemma-family templates reject a system role: fold it into the user turn.
+            [{"role": "user", "content": SYSTEM_PROMPT + "\n\n" + user}],
+        ]
+        last_err = None
+        for msgs in variants:
+            for extra in ({"enable_thinking": False}, {}):  # Qwen3: answer without a thinking phase
+                try:
+                    out = tok.apply_chat_template(msgs, add_generation_prompt=True,
+                                                  return_tensors='pt', **extra)
+                    return out["input_ids"] if hasattr(out, "keys") else out
+                except Exception as e:  # template does not accept this shape
+                    last_err = e
+        raise last_err
+
+    def _call_hf(self, sentences, k_segments) -> dict:
+        import torch
+
         with self._lock:
             if self._hf is None:
-                tok = AutoTokenizer.from_pretrained(self.model)
-                mdl = AutoModelForCausalLM.from_pretrained(self.model, torch_dtype='auto', device_map='auto')
-                self._hf = (tok, mdl)
-        tok, mdl = self._hf
-        msgs = [{"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": (self._examples_block() + "\n" + self._task_text(sentences, k_segments)).strip()}]
-        ids = tok.apply_chat_template(msgs, add_generation_prompt=True, return_tensors='pt').to(mdl.device)
-        t0 = time.time()
-        with self._lock, torch.no_grad():  # one generation at a time on the GPU
-            out = mdl.generate(ids, max_new_tokens=512, do_sample=False)
+                self._hf = self._load_hf()
+            tok, mdl = self._hf
+            ids = self._hf_prompt_ids(tok, sentences, k_segments).to(mdl.device)
+            t0 = time.time()
+            with torch.no_grad():  # one generation at a time on the GPU
+                out = mdl.generate(ids, attention_mask=torch.ones_like(ids), max_new_tokens=self.hf_max_new_tokens,
+                                   do_sample=False, pad_token_id=tok.pad_token_id or tok.eos_token_id)
         text = tok.decode(out[0, ids.shape[1]:], skip_special_tokens=True)
         text = re.sub(r'<think>.*?</think>', '', text, flags=re.S)
         numbers, error = [], None
-        m = re.search(r'\{.*?\}', text, flags=re.S)
+        m = re.search(r'\{[^{}]*"boundaries"[^{}]*\}', text, flags=re.S)
         try:
-            numbers = json.loads(m.group(0))["boundaries"] if m else []
-            if not m:
-                error = "parse: no JSON"
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            if m:
+                numbers = [int(x) for x in json.loads(m.group(0))["boundaries"]]
+            else:  # fall back to the integers in the answer
+                numbers = [int(x) for x in re.findall(r'\d+', text)]
+                error = "parse: no JSON (used bare integers)" if numbers else "parse: no answer"
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             error = f"parse: {e}"
         return {"numbers": numbers, "error": error, "served_model": self.model,
-                "latency_s": round(time.time() - t0, 2),
+                "latency_s": round(time.time() - t0, 2), "raw_answer": text[:500],
                 "input_tokens": int(ids.shape[1]), "output_tokens": int(out.shape[1] - ids.shape[1])}
 
     def _call_mock(self, sentences, k_segments) -> dict:
