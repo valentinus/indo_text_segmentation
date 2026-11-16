@@ -140,7 +140,7 @@ TopicTiling & Indonesian & 0.420 & 0.430 & 0.415 & 0.427 & $-$0.005\\
 \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
 \textbf{Method} & \boldmath$P_k$ & \textbf{WD} & \boldmath$P_k$ & \textbf{WD} & \boldmath$P_k$ & \textbf{WD}\\
 \midrule
-Random boundaries, $k$ given & \pend & \pend & 0.451 & 0.459 & 0.460 & 0.469\\
+Random boundaries, $k$ given & 0.460 & 0.473 & 0.451 & 0.459 & 0.460 & 0.469\\
 \midrule
 TextTiling  & \tbd & \tbd & \tbd & \tbd & \tbd & \tbd\\
 C99         & 0.427 & 0.465 & 0.428 & 0.461 & 0.427 & 0.462\\
@@ -179,7 +179,7 @@ LLM, few-shot ($k$ given)  & \tbd & \tbd & \tbd & \tbd & \tbd & \tbd\\
   legend style={at={(0.98,0.97)}, anchor=north east, font=\footnotesize, draw=none},
   legend cell align=left, unbounded coords=jump, enlarge x limits=0.08]
 \addplot[fill=gray!55, draw=none] coordinates {
-  (Random,nan) (C99,0.427) (TopicTiling,0.415) (BeamSeg,nan) (BayesSeg,nan) (CVS,0.372) (BayesSeg-MD,nan)};
+  (Random,0.460) (C99,0.427) (TopicTiling,0.415) (BeamSeg,nan) (BayesSeg,nan) (CVS,0.372) (BayesSeg-MD,nan)};
 \addplot[fill=blue!55, draw=none] coordinates {
   (Random,0.451) (C99,0.428) (TopicTiling,0.421) (BeamSeg,0.381) (BayesSeg,0.371) (CVS,0.363) (BayesSeg-MD,0.320)};
 \addplot[fill=orange!75, draw=none] coordinates {
