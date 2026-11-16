@@ -52,7 +52,49 @@ class BayesSeg:
     def _seg_counts(self, C: np.ndarray, i: int, j: int) -> np.ndarray:
         return (C[j] - C[i]).astype(np.int32)
 
-    def segment_k(self, sentences: List[str], k_segments: int) -> List[int]:
+    def _segment_ll(self, sentences: List[str], Lmax: int = 80) -> np.ndarray:
+        n = len(sentences)
+        C = self._prepare_counts(sentences)
+        seg_ll = np.full((n + 1, n + 1), -np.inf)
+        for i in range(n):
+            for j in range(i + 1, min(n, i + Lmax) + 1):
+                seg_ll[i, j] = self._seg_log_marginal(self._seg_counts(C, i, j))
+        return seg_ll
+
+    def segment_k(self, sentences: List[str], k_segments: int, Lmax: int = 80) -> List[int]:
+        """Exact MAP segmentation into k segments (dynamic programming).
+
+        dp[s, j] = best log marginal likelihood of sentences[0:j] split into s segments.
+        """
+        n = len(sentences)
+        if k_segments <= 1 or n <= 1:
+            return []
+        k = min(k_segments, n)
+        seg_ll = self._segment_ll(sentences, Lmax)
+        dp = np.full((k + 1, n + 1), -np.inf)
+        prev = np.full((k + 1, n + 1), -1, dtype=int)
+        dp[0, 0] = 0.0
+        for s in range(1, k + 1):
+            for j in range(s, n + 1):
+                lo = max(s - 1, j - Lmax)
+                cand = dp[s - 1, lo:j] + seg_ll[lo:j, j]
+                if cand.size == 0:
+                    continue
+                b = int(np.argmax(cand))
+                dp[s, j] = cand[b]
+                prev[s, j] = lo + b
+        if not np.isfinite(dp[k, n]):
+            return []
+        bounds, j = [], n
+        for s in range(k, 1, -1):
+            j = int(prev[s, j])
+            bounds.append(j)
+        return sorted(b for b in bounds if 0 < b < n)
+
+    def segment_k_legacy(self, sentences: List[str], k_segments: int) -> List[int]:
+        """Original implementation used in the conference paper. It writes each DP step
+        into the row it reads from (dp[s-1]), so it does not search over k segments and
+        returns about one boundary per document. Kept only to reproduce old numbers."""
         n = len(sentences)
         if k_segments <= 1 or n <= 1:
             return []
@@ -131,6 +173,42 @@ class BeamSeg(BayesSeg):
         self.Lmax = Lmax
 
     def segment_k(self, sentences: List[str], k_segments: int) -> List[int]:
+        """Beam search over segment ends for exactly k segments.
+
+        After each step, hypotheses ending at the same sentence are recombined (only
+        the best is kept), and the beam keeps the `beam_size` ends with the highest
+        log-likelihood per covered sentence, so prefixes of different lengths are
+        compared fairly. Segment t may end at most at n - (k - t); the last ends at n.
+        With beam_size >= n the search is exact (equal to BayesSeg.segment_k).
+        """
+        n = len(sentences)
+        if k_segments <= 1 or n <= 1:
+            return []
+        k = min(k_segments, n)
+        seg_ll = self._segment_ll(sentences, self.Lmax)
+        states = {0: (0.0, [])}  # end position -> (score, boundaries)
+        for t in range(1, k + 1):
+            nxt = {}
+            for last, (score, bounds) in states.items():
+                if t < k:
+                    # leave >= 1 sentence per remaining segment, and no more than Lmax each
+                    lo = max(last + 1, n - (k - t) * self.Lmax)
+                    ends = range(lo, min(n - (k - t), last + self.Lmax) + 1)
+                else:
+                    ends = [n] if n - last <= self.Lmax else []
+                for j in ends:
+                    sc = score + seg_ll[last, j]
+                    if np.isfinite(sc) and (j not in nxt or sc > nxt[j][0]):
+                        nxt[j] = (sc, bounds + ([j] if j < n else []))
+            if not nxt:
+                return []
+            keep = sorted(nxt, key=lambda j: nxt[j][0] / j, reverse=True)[:self.beam_size]
+            states = {j: nxt[j] for j in keep}
+        if n not in states:
+            return []
+        return sorted(b for b in states[n][1] if 0 < b < n)
+
+    def segment_k_legacy(self, sentences: List[str], k_segments: int) -> List[int]:
         n = len(sentences)
         if k_segments <= 1 or n <= 1:
             return []
