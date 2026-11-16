@@ -220,5 +220,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-# Downloaded / extracted Wikipedia dumps
-/data/wiki/
+# Raw Wikipedia dumps (too large for GitHub); extracted text/ is committed
+/data/wiki/**/*.bz2
+/data/wiki/**/*.part
+/data/wiki/**/.wikiextractor_patched/
