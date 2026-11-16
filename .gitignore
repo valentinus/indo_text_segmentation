@@ -225,7 +225,6 @@ __marimo__/
 /data/wiki/**/*.part
 /data/wiki/**/.wikiextractor_patched/
 
-# LaTeX build files
-paper/*.aux
-paper/*.log
-paper/*.out
+
+# Paper drafts are kept out of the repository
+/paper/
