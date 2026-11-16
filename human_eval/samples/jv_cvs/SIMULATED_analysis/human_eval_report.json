@@ -1,0 +1,124 @@
+{
+  "simulated": true,
+  "informativeness": {
+    "N_articles": 30,
+    "annotators": 3,
+    "avg_rank": {
+      "A": 3.283333333333333,
+      "B": 2.6,
+      "C": 2.3,
+      "D": 1.8166666666666667
+    },
+    "friedman_chi2": 22.039711191335766,
+    "friedman_p": 6.400174300892609e-05,
+    "nemenyi_CD": 0.8563333333333333,
+    "significantly_different_from": {
+      "A": [
+        "C",
+        "D"
+      ],
+      "B": [],
+      "C": [
+        "A"
+      ],
+      "D": [
+        "A"
+      ]
+    },
+    "kendall_W_mean": 0.4
+  },
+  "coherence": {
+    "N_articles": 30,
+    "annotators": 3,
+    "avg_rank": {
+      "A": 3.3666666666666667,
+      "B": 2.8,
+      "C": 1.6166666666666667,
+      "D": 2.216666666666667
+    },
+    "friedman_chi2": 32.58510638297872,
+    "friedman_p": 3.939545833124035e-07,
+    "nemenyi_CD": 0.8563333333333333,
+    "significantly_different_from": {
+      "A": [
+        "C",
+        "D"
+      ],
+      "B": [
+        "C"
+      ],
+      "C": [
+        "A",
+        "B"
+      ],
+      "D": [
+        "A"
+      ]
+    },
+    "kendall_W_mean": 0.3688888888888889
+  },
+  "conciseness": {
+    "N_articles": 30,
+    "annotators": 3,
+    "avg_rank": {
+      "A": 3.3666666666666667,
+      "B": 3.05,
+      "C": 1.95,
+      "D": 1.6333333333333333
+    },
+    "friedman_chi2": 38.57288135593221,
+    "friedman_p": 2.1376520781584044e-08,
+    "nemenyi_CD": 0.8563333333333333,
+    "significantly_different_from": {
+      "A": [
+        "C",
+        "D"
+      ],
+      "B": [
+        "C",
+        "D"
+      ],
+      "C": [
+        "A",
+        "B"
+      ],
+      "D": [
+        "A",
+        "B"
+      ]
+    },
+    "kendall_W_mean": 0.4918518518518519
+  },
+  "overall": {
+    "N_articles": 30,
+    "annotators": 3,
+    "avg_rank": {
+      "A": 3.6666666666666665,
+      "B": 2.966666666666667,
+      "C": 1.75,
+      "D": 1.6166666666666667
+    },
+    "friedman_chi2": 54.591695501730136,
+    "friedman_p": 8.391019537349888e-12,
+    "nemenyi_CD": 0.8563333333333333,
+    "significantly_different_from": {
+      "A": [
+        "C",
+        "D"
+      ],
+      "B": [
+        "C",
+        "D"
+      ],
+      "C": [
+        "A",
+        "B"
+      ],
+      "D": [
+        "A",
+        "B"
+      ]
+    },
+    "kendall_W_mean": 0.4202469135802469
+  }
+}
