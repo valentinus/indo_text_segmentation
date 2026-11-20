@@ -1,4 +1,4 @@
-# RDSP 2026 guest lecture: From Comments to Insight
+# RDSP 2026 guest lecture: Natural Language Processing in the Age of Generative AI
 
 A 90-minute lecture for the Ritsumeikan Data Science Program. It combines the 2025 lecture
 (NLP foundations and the TopicDiff-LDA research) with a hands-on case: YouTube comments
