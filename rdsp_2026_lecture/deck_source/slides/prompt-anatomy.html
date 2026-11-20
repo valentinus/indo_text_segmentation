@@ -1,0 +1,15 @@
+<section id="prompt-anatomy">
+<p class="eyebrow">Activity 2 · AI annotation</p>
+<h2>A prompt is a codebook plus instructions</h2>
+<div class="row" style="gap:40px;">
+<div class="prompt grow">You are an annotator for a tourism research project.<br>The texts are YouTube comments on a travel video about Fushimi Inari Taisha (Kyoto), in English, Japanese or Indonesian.<br><br>Assign exactly ONE primary topic:<br>SCN = Scenery · CRW = Crowds · CUL = Culture · PRC = Practical · FDS = Food/shopping · VID = Video · OTH = Other<br>Give a secondary topic if clearly present, else "-".<br>Sentiment: POS / NEU / NEG. Sarcasm counts by its intended meaning.<br><br>Return a table: id | primary | secondary | sentiment | confidence | reason (max 12 words).<br>Do not skip, merge or invent comments.</div>
+<div class="card" style="width:440px; gap:20px; padding:32px;">
+<p class="tag">Role</p>
+<p class="tag">Context</p>
+<p class="tag indigo">Codebook</p>
+<p class="tag ghost">Rules + format</p>
+<p class="small">The codebook is the same one the human annotators used, so labels can be compared one-to-one.</p>
+</div>
+</div>
+<aside>0:57 — This is Prompt B from prompts.md (shortened on the slide). Point out each part. The confidence and reason columns are for us: low confidence tells a human where to look. Students now paste the 20 comments plus this prompt into ChatGPT, Gemini or Claude.</aside>
+</section>

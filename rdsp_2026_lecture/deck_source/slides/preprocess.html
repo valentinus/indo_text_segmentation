@@ -1,0 +1,16 @@
+<section id="preprocess" class="alt">
+<p class="eyebrow">Part 1 · Foundations</p>
+<h2>Preprocessing and features on one comment</h2>
+<div class="card" style="padding:28px 40px;"><p class="quote" style="font-size:30px;">“The rows of gates feel like walking through a tunnel of fire. Absolutely breathtaking!!”</p></div>
+<table>
+<tr class="head"><th style="width:26%;">Step</th><th style="width:74%;">Result</th></tr>
+<tr><td>Normalize</td><td>the rows of gates feel like walking through a tunnel of fire absolutely breathtaking</td></tr>
+<tr><td>Tokenize</td><td>[the, rows, of, gates, feel, like, walking, …]</td></tr>
+<tr><td>Stopwords out</td><td>[rows, gates, feel, walking, tunnel, fire, absolutely, breathtaking]</td></tr>
+<tr><td>Lemmatize</td><td>[row, gate, feel, walk, tunnel, fire, absolutely, breathtaking]</td></tr>
+<tr><td>Bag of words</td><td>{gate: 1, tunnel: 1, fire: 1, breathtaking: 1, …} — order is lost</td></tr>
+<tr><td>TF-IDF</td><td>“tunnel”, “fire” score high (rare); “gate” lower (in many comments)</td></tr>
+</table>
+<p class="small">Note: “fire” is a metaphor here. Bag-of-words cannot see that; context-aware models can.</p>
+<aside>0:10 — Walk through one comment. Ask: what was lost? Word order, the metaphor, the emphasis “!!”. Japanese and Indonesian need different tokenizers and stopword lists — remember this when we compare methods later.</aside>
+</section>

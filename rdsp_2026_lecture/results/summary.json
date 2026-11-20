@@ -1,0 +1,135 @@
+{
+  "n_comments": 60,
+  "languages": {
+    "en": 50,
+    "id": 6,
+    "ja": 4
+  },
+  "seed_vs_llm_all": {
+    "kappa": 0.749,
+    "agreement": 0.783
+  },
+  "seed_vs_llm_english": {
+    "kappa": 0.906,
+    "agreement": 0.92
+  },
+  "seed_vs_llm_non_english": {
+    "agreement": 0.1,
+    "n": 10
+  },
+  "lda_vs_llm_all": {
+    "kappa": 0.158,
+    "agreement": 0.3
+  },
+  "lda_top_words": [
+    [
+      "locals",
+      "yen",
+      "bring",
+      "summit",
+      "shoes",
+      "real"
+    ],
+    [
+      "kyoto",
+      "torii",
+      "shrine",
+      "travel",
+      "banget",
+      "seen"
+    ],
+    [
+      "near",
+      "video",
+      "kitsune",
+      "trail",
+      "place",
+      "yotsutsuji"
+    ],
+    [
+      "kyoto",
+      "station",
+      "like",
+      "free",
+      "literally",
+      "city"
+    ],
+    [
+      "gates",
+      "inari",
+      "shoulder",
+      "banget",
+      "path",
+      "main"
+    ],
+    [
+      "like",
+      "pagi",
+      "ramai",
+      "years",
+      "ago",
+      "feel"
+    ]
+  ],
+  "lda_mapping": {
+    "0": "VID",
+    "1": "CUL",
+    "2": "PRC",
+    "3": "PRC",
+    "4": "SCN",
+    "5": "PRC"
+  },
+  "lda_docs_without_tokens": 4,
+  "llm_topic_counts": {
+    "SCN": 11,
+    "CRW": 10,
+    "CUL": 10,
+    "PRC": 12,
+    "FDS": 7,
+    "VID": 7,
+    "OTH": 3
+  },
+  "llm_sentiment_counts": {
+    "Positive": 25,
+    "Neutral": 19,
+    "Negative": 16
+  },
+  "multi_topic_share": 0.3,
+  "topic_x_sentiment": {
+    "SCN": {
+      "Positive": 10,
+      "Neutral": 0,
+      "Negative": 1
+    },
+    "CRW": {
+      "Positive": 0,
+      "Neutral": 1,
+      "Negative": 9
+    },
+    "CUL": {
+      "Positive": 3,
+      "Neutral": 6,
+      "Negative": 1
+    },
+    "PRC": {
+      "Positive": 3,
+      "Neutral": 9,
+      "Negative": 0
+    },
+    "FDS": {
+      "Positive": 4,
+      "Neutral": 1,
+      "Negative": 2
+    },
+    "VID": {
+      "Positive": 4,
+      "Neutral": 0,
+      "Negative": 3
+    },
+    "OTH": {
+      "Positive": 1,
+      "Neutral": 2,
+      "Negative": 0
+    }
+  }
+}

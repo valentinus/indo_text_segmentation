@@ -1,0 +1,14 @@
+<section id="pitfalls" class="alt">
+<p class="eyebrow">Limits</p>
+<h2>LLM annotation needs a human in the loop</h2>
+<table>
+<tr class="head"><th style="width:24%;">Risk</th><th style="width:38%;">What it looks like</th><th style="width:38%;">Check</th></tr>
+<tr><td>Hallucination</td><td>quotes or counts that are not in the data</td><td>row count = input; quotes must exist</td></tr>
+<tr><td>Inconsistency</td><td>labels flip between runs or models</td><td>run twice; send flips to a human</td></tr>
+<tr><td>Bias</td><td>cultural or language-specific misreadings</td><td>sample per language; native-speaker review</td></tr>
+<tr><td>Leakage of trust</td><td>“the AI said so” replaces validation</td><td>κ against a human-labelled sample</td></tr>
+<tr><td>Privacy &amp; terms</td><td>usernames or personal data in prompts</td><td>anonymize; follow platform terms and ethics review</td></tr>
+</table>
+<p class="lede">Rule of thumb: <b>humans define the labels and audit a sample; the AI does the volume.</b></p>
+<aside>1:19 — Same principle as the 2022 “bronze standard”: automated labels are useful if their agreement with humans is measured and reported. In a thesis, report κ between LLM and human annotators, the prompt, the model version and the date.</aside>
+</section>

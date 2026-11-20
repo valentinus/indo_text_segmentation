@@ -1,0 +1,21 @@
+<section id="lda" class="alt">
+<p class="eyebrow">Part 1 · Foundations</p>
+<h2>Topic modeling: letting the data propose the labels</h2>
+<div class="row" style="gap:48px;">
+<div class="col grow" style="gap:28px;">
+<p><b>LDA</b> (Latent Dirichlet Allocation) is a generative probabilistic model:</p>
+<ul>
+<li>a <b>document</b> is a mixture of topics</li>
+<li>a <b>topic</b> is a distribution over words</li>
+<li>each <b>word</b> is drawn from one topic</li>
+</ul>
+<p class="small">The number of topics is chosen by experiment, e.g. with coherence scores. Humans then name each topic.</p>
+</div>
+<div class="col" style="width:700px; gap:20px;">
+<div class="card" style="padding:24px 32px;"><p class="tag indigo">Topic 6 → “Beach”</p><p>sea · wave · coast · beauty · white sand</p></div>
+<div class="card" style="padding:24px 32px;"><p class="tag indigo">Topic 1 → “Historical sites”</p><p>museum · building · palace · dutch · old</p></div>
+<div class="card" style="padding:24px 32px;"><p class="tag ghost">One review</p><p>Beach 0.32 · Natural place 0.25 · Things to buy 0.15 · …</p></div>
+</div>
+</div>
+<aside>0:16 — Explain LDA intuitively. The right-hand examples are real topics from the 2022 tourism model. Note the last card: one review is spread over several topics — that is the multi-topic problem the next study tackles.</aside>
+</section>
